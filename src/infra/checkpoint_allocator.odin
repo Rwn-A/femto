@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Rowan Apps, Tor Rabien
+// SPDX-License-Identifier: MIT
 /*
  Stack allocator based on checkpoints.
  -------------------------------------
@@ -79,12 +81,12 @@ ca_rewind_to_keep :: proc(ca: ^Checkpoint_Allocator, checkpoint: Checkpoint) {
 
 // Resize the data buffer, only call manually if you want to provide more size up front, cannot shrink the backing data.
 ca_resize_backing :: proc(ca: ^Checkpoint_Allocator, new_size: int) -> mem.Allocator_Error {
-	if new_size <= len(ca.data) do return nil
+	if new_size <= len(ca.data) { return nil }
 
 	// Since we're using virtual arena, resize should preserve pointers
 	backing_allocator := virtual.arena_allocator(&ca.backing)
 	new_data, err := mem.resize(raw_data(ca.data), slice.size(ca.data), new_size, allocator = backing_allocator)
-	if err != nil do return err
+	if err != nil { return err }
 
 	ca.data = slice.from_ptr(cast(^u8)new_data, new_size)
 	return nil

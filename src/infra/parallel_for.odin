@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2025 Rowan Apps, Tor Rabien
+// SPDX-License-Identifier: MIT
 /*
  Simple parallel for implementation with support for possibly contended writes.
  ------------------------------------------------------------------------------
@@ -18,10 +20,10 @@ import "core:testing"
 import "core:time"
 import "core:log"
 
-// TODO: Allow for flushing mid loop to lower peak memory at the cost of come CPU time.
+// TODO: Allow for flushing mid loop to lower peak memory at the cost of some CPU time.
 // TODO: Clean up some false sharing, especially in contended writer.
 // TODO: Could add a spin-lock, if the barriers really seem to matter.
-// TODO: opt-in work stealing, if we need it, probably will for p-adataptible FEM
+// TODO: Opt-in work stealing, if we need it, probably will for p-adataptible FEM
 
 // Disable multi-threading, no matter how many threads you ask for it always just uses 1.
 USE_THREADS :: #config(USE_THREADS, true)
@@ -55,7 +57,6 @@ Contended_Writer :: struct(E: typeid) {
 	outputs: [][]E,
 	owned_indices: [][]Range, //per thread, per buffer
 	orphan_buffers: [][dynamic]Orphaned_Entry(E), //per thread
-	mode: Write_Mode,
 }
 
 // A entry from `contended_write` that was not able to be written immediately.
@@ -64,13 +65,6 @@ Orphaned_Entry :: struct(E: typeid) {
 	index: int,
 	output_index: int,
 }
-
-// Controls how entries from `contended_write` are added to the output arrays.
-Write_Mode :: enum {
-	Accumulate,
-	Decumulate,
-}
-
 
 // Set on initialization, value from 0 -> total_threads - 1, useful for accessing thread specific resources from the data parameter.
 // Also used by contended writer to know what thread is calling it.
@@ -222,7 +216,6 @@ parallel_for_contended :: proc(
 	data: $T,
 	body: proc(data: T, range: Range, w: ^Contended_Writer(E)),
 	allocator: runtime.Allocator,
-	mode := Write_Mode.Accumulate,
 	loc := #caller_location,
 ) {
 	assert(len(outputs) != 0, "Expected atleast 1 output array")
@@ -240,7 +233,6 @@ parallel_for_contended :: proc(
 
 	w: Contended_Writer(E)
 	w.outputs = outputs
-	w.mode = mode
 	w.orphan_buffers = make([][dynamic]Orphaned_Entry(E), prt.total_threads)
 	w.owned_indices = make([][]Range, prt.total_threads)
 
@@ -294,11 +286,7 @@ contended_write :: proc(cw: ^Contended_Writer($E), output_index, value_index: in
 
 @(private="file")
 unchecked_write :: #force_inline proc(cw: ^Contended_Writer($E), output_index, value_index: int, value: E) {
-	val := &cw.outputs[output_index][value_index]
-	switch cw.mode {
-		case .Accumulate: val^ += value
-		case .Decumulate: val^ -= value
-	}
+	cw.outputs[output_index][value_index] += value
 }
 
 in_range :: #force_inline proc(val: int, range: Range) -> bool {return val >= range.start && val < range.end}
